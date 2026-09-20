@@ -108,3 +108,7 @@ USB SOF 已启用，USB 中断优先级为 0。
 - 音频格式固定为 48 kHz、双声道、16-bit PCM；
 - 不支持运行时切换采样率；
 - 没有异步反馈端点；
+
+## 许可
+
+本项目代码采用 [MIT License](LICENSE)。仓库内的 USBX、CMSIS、STM32 HAL 和生成代码仍遵循各自目录中的许可证文件；这些第三方许可证不因根目录的 MIT License 而改变。
