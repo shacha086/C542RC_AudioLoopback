@@ -37,6 +37,8 @@ VOID usbd_audio_activate(VOID *audio_instance);
 VOID usbd_audio_deactivate(VOID *audio_instance);
 UINT usbd_audio_control_process(UX_DEVICE_CLASS_AUDIO *audio_instance,
                                UX_SLAVE_TRANSFER *transfer);
+VOID usbd_audio_process(VOID);
+VOID usbd_audio_get_parameters(UX_DEVICE_CLASS_AUDIO_PARAMETER *audio_parameter);
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

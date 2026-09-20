@@ -31,6 +31,18 @@
 #include "ux_device_stack.h"
 #include "ux_utility.h"
 
+/**
+  * @brief  Optional notification for a completed isochronous OUT packet.
+  */
+__WEAK VOID ux_dcd_stm32_iso_out_received(uint8_t endpoint_number,
+                                          UCHAR *data,
+                                          ULONG length)
+{
+  UX_PARAMETER_NOT_USED(endpoint_number);
+  UX_PARAMETER_NOT_USED(data);
+  UX_PARAMETER_NOT_USED(length);
+}
+
 
 static inline void _ux_dcd_stm32_setup_in(UX_DCD_STM32_ED * ed, UX_SLAVE_TRANSFER *transfer_request)
 {
@@ -677,8 +689,29 @@ VOID HAL_PCD_DataOutStageCallback(hal_pcd_handle_t *hpcd, uint8_t ep_num)
   {
 
 
-    /* Update the length of the data sent in previous transaction.  */
-    transfer_request -> ux_slave_transfer_request_actual_length =  HAL_PCD_EP_GetRxCount(hpcd, ep_num);
+    if ((transfer_request -> ux_slave_transfer_request_endpoint != UX_NULL) &&
+        ((transfer_request -> ux_slave_transfer_request_endpoint ->
+          ux_slave_endpoint_descriptor.bmAttributes & 0x03U) == 0x01U))
+    {
+      ULONG received_length = HAL_PCD_EP_GetRxCount(hpcd, ep_num);
+
+      /* A double-buffered isochronous OUT endpoint remains armed. The HAL
+         accumulates xfer_count unless it is reset after each packet. */
+      hpcd -> out_ep[ep_num].xfer_count = 0U;
+      transfer_request -> ux_slave_transfer_request_actual_length = received_length;
+
+      /* Notify the application before the next packet can overwrite the
+         endpoint transfer buffer. */
+      ux_dcd_stm32_iso_out_received(ep_num,
+                                    transfer_request -> ux_slave_transfer_request_data_pointer,
+                                    received_length);
+    }
+    else
+    {
+      /* Preserve the original behavior for non-isochronous endpoints. */
+      transfer_request -> ux_slave_transfer_request_actual_length =
+        HAL_PCD_EP_GetRxCount(hpcd, ep_num);
+    }
 
     /* Set the completion code to no error.  */
     transfer_request -> ux_slave_transfer_request_completion_code =  UX_SUCCESS;

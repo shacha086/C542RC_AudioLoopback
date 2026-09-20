@@ -58,9 +58,15 @@ UINT app_usbx_init(VOID)
   */
 UINT app_usbx_deinit(VOID)
 {
-  UINT ret = UX_SUCCESS;
+  UINT status;
 
-  return ret;
+  status = app_usbx_device_deinit();
+  if (status != UX_SUCCESS)
+  {
+    return status;
+  }
+
+  return ux_system_uninitialize();
 }
 
 /**
@@ -69,11 +75,9 @@ UINT app_usbx_deinit(VOID)
   */
 VOID app_usbx_process(VOID)
 {
-  if (app_usbx_device_process() != UX_SUCCESS)
-  {
-    return;
-  }
-
+  /* USBX standalone processing returns state-machine values, not only
+     UX_SUCCESS. The next main-loop iteration must run regardless. */
+  (VOID)app_usbx_device_process();
 }
 
 /**

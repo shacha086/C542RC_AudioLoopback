@@ -171,6 +171,12 @@ VOID    HAL_PCD_IsoOUTIncompleteCallback(hal_pcd_handle_t *hpcd, uint8_t ep_num)
 VOID    HAL_PCD_LpmCallback(hal_pcd_handle_t *hpcd, hal_pcd_lpm_active_status_t lpm_status);
 VOID    HAL_PCD_BcdCallback(hal_pcd_handle_t *hpcd, hal_pcd_bcd_port_type_t port_type);
 
+/* Optional application hook invoked after an isochronous OUT packet has been
+   copied from PMA. The default implementation is empty. */
+VOID    ux_dcd_stm32_iso_out_received(uint8_t endpoint_number,
+                                      UCHAR *data,
+                                      ULONG length);
+
 /* Define USB STM32 DCD prototypes.  */
 
 UINT    _ux_dcd_stm32_endpoint_create(UX_DCD_STM32 *dcd_stm32, UX_SLAVE_ENDPOINT *endpoint);
@@ -198,4 +204,3 @@ UINT    _ux_dcd_stm32_uninitialize(ULONG dcd_io, ULONG parameter);
 #define ux_dcd_stm32_uninitialize                    _ux_dcd_stm32_uninitialize
 
 #endif /* UX_DCD_STM32_H */
-

@@ -44,10 +44,21 @@ extern "C" {
 #define USBD_PRODUCT_ID                         22288
 #define USBD_LANG_ID_STRING                     1033
 #define USBD_MANUFACTURER_STRING                "STMicroelectronics"
-#define USBD_PRODUCT_STRING                     "STM32 USBD Device"
+#define USBD_PRODUCT_STRING                     "STM32 USB Audio Loopback"
 #define USBD_SERIAL_NUMBER_STRING               "000000000001"
 #define USBD_MAX_POWER                          50
-/* Endpoint IN for AUDIO */
+/* Fixed full-speed format: 48 kHz, stereo, signed 16-bit PCM. */
+#define USBD_AUDIO_SAMPLE_RATE                  48000U
+
+/* The two-stream audio framework is larger than the library's 256-byte
+   default descriptor storage. */
+#define USBD_FRAMEWORK_FS_MAX_LENGTH            512U
+#define USBD_FRAMEWORK_HS_MAX_LENGTH            512U
+
+/* Build USB Audio Class 1.0 descriptors for broad native-host support. */
+#define USBD_AUDIO_USE_UAC1_BUILDER             1U
+
+/* Endpoint IN for AUDIO. EP2 is separate from double-buffered OUT EP1. */
 #define USBD_AUDIO_EPIN_ADDR                    0x82U
 #define USBD_AUDIO_EPIN_TYPE                    UX_ISOCHRONOUS_ENDPOINT
 #define USBD_AUDIO_EPIN_FS_MPS                  192
@@ -56,9 +67,11 @@ extern "C" {
 #define USBD_AUDIO_EPIN_HS_MPS                  512
 #define USBD_AUDIO_EPIN_HS_BINTERVAL            1
 #endif /* USBD_HIGH_SPEED_SUPPORTED */
-/* Endpoint OUT for AUDIO */
+/* Endpoint OUT for AUDIO. 0x0D selects synchronous isochronous data so one
+   full-speed USB frame always represents exactly 48 samples. */
 #define USBD_AUDIO_EPOUT_ADDR                   0x01U
 #define USBD_AUDIO_EPOUT_TYPE                   UX_ISOCHRONOUS_ENDPOINT
+#define USBD_AUDIO_EPOUT_DATA_TYPE              0x0DU
 #define USBD_AUDIO_EPOUT_FS_MPS                 192
 #define USBD_AUDIO_EPOUT_FS_BINTERVAL           1
 #if USBD_HIGH_SPEED_SUPPORTED == 1U

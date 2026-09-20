@@ -16,6 +16,7 @@
   */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "mx_usbx_app.h"
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -38,12 +39,14 @@ int main(void)
   {
     return (-1);
   }
-  else
+
+  if (app_usbx_init() != UX_SUCCESS)
   {
-    /*
-      * You can start your application code here
-      */
-    while (1) {}
+    return (-1);
+  }
+
+  while (1)
+  {
+    app_usbx_process();
   }
 } /* end main */
-

@@ -29,15 +29,23 @@ hal_pcd_handle_t *p_usb_device = UX_NULL;
   */
 UINT app_usbx_device_init(VOID)
 {
-  UINT status = UX_SUCCESS;
-  USB_DESCRIPTOR                    usbd_desc;
-  ULONG                             report_desc_len;
-  UX_DEVICE_CLASS_AUDIO_PARAMETER   audio_parameter;
-  static UX_DEVICE_CLASS_AUDIO_STREAM_PARAMETER audio_stream_parameter[USBD_AUDIO_STREAM_NUMBER] = {0};
-  report_desc_len = sizeof(audio_parameter);
-  usb_device_descriptor_register_class(USBD_CLASS_TYPE_AUDIO_20, audio_interface, &report_desc_len);
+  UINT status;
+  USB_DESCRIPTOR usbd_desc;
+  UX_DEVICE_CLASS_AUDIO_PARAMETER audio_parameter = {0};
 
-  usb_device_descriptor_get_framework(&usbd_desc);
+  status = usb_device_descriptor_register_class(USBD_CLASS_TYPE_AUDIO_10,
+                                                 audio_interface,
+                                                 UX_NULL);
+  if (status != USBD_DESCRIPTOR_SUCCESS)
+  {
+    return status;
+  }
+
+  status = usb_device_descriptor_get_framework(&usbd_desc);
+  if (status != USBD_DESCRIPTOR_SUCCESS)
+  {
+    return status;
+  }
 
   /* Install the device portion of USBX */
   status = ux_device_stack_initialize(usbd_desc.device_high_speed.framework,
@@ -54,12 +62,8 @@ UINT app_usbx_device_init(VOID)
   {
     return status;
   }
-  /* Initialize the audio class parameters for the device */
-  audio_parameter.ux_device_class_audio_parameter_streams_nb                                         = USBD_AUDIO_STREAM_NUMBER;
-  audio_parameter.ux_device_class_audio_parameter_streams                                            = audio_stream_parameter;
-  audio_parameter.ux_device_class_audio_parameter_callbacks.ux_slave_class_audio_instance_activate   = usbd_audio_activate;
-  audio_parameter.ux_device_class_audio_parameter_callbacks.ux_slave_class_audio_instance_deactivate = usbd_audio_deactivate;
-  audio_parameter.ux_device_class_audio_parameter_callbacks.ux_device_class_audio_control_process    = usbd_audio_control_process;
+  /* Configure both AudioStreaming interfaces and their callbacks. */
+  usbd_audio_get_parameters(&audio_parameter);
 
   /* Initialize the device audio class */
   status = ux_device_stack_class_register(_ux_system_slave_class_audio_name,
@@ -117,20 +121,39 @@ UINT app_usbx_device_deinit(VOID)
   */
 UINT app_usbx_device_process(VOID)
 {
-  UINT return_status = UX_SUCCESS;
+  UINT status;
+
   /* Initialization of USB device */
   if (p_usb_device == UX_NULL)
   {
     /* Initialization of USB device */
     p_usb_device = mx_usb_drd_fs_device_gethandle();
+    if (p_usb_device == UX_NULL)
+    {
+      return UX_ERROR;
+    }
 
     /* Initialize the device controller driver */
-    return_status = ux_dcd_stm32_initialize(0, (ULONG)p_usb_device);
-    if (return_status != UX_SUCCESS)
+    status = ux_dcd_stm32_initialize(0, (ULONG)p_usb_device);
+    if (status != UX_SUCCESS)
     {
-      return return_status;
+      p_usb_device = UX_NULL;
+      return status;
     }
   }
-  return_status = ux_device_stack_tasks_run();
-  return return_status;
+
+  if (_ux_system_slave->ux_system_slave_device.ux_slave_device_state == UX_DEVICE_CONFIGURED)
+  {
+    usbd_audio_process();
+  }
+
+  status = ux_device_stack_tasks_run();
+
+  if ((status != UX_STATE_RESET) &&
+      (_ux_system_slave->ux_system_slave_device.ux_slave_device_state == UX_DEVICE_CONFIGURED))
+  {
+    usbd_audio_process();
+  }
+
+  return status;
 }

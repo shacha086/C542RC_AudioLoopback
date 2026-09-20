@@ -60,10 +60,17 @@ static UINT usb_device_dfu_framework_builder(USB_DEVICE_INTERFACE_HANDLE *p_inte
 #endif /* USBD_DFU_CLASS_ACTIVATED */
 
 #if USBD_AUDIO_CLASS_ACTIVATED == 1U
+#if defined(USBD_AUDIO_USE_UAC1_BUILDER)
+static UINT usb_device_audio_uac1_framework_builder(USB_DEVICE_INTERFACE_HANDLE *p_interface,
+                                                    ULONG p_config_framework,
+                                                    ULONG *config_framework_size,
+                                                    UCHAR device_speed);
+#else
 static UINT usb_device_audio_framework_builder(USB_DEVICE_INTERFACE_HANDLE *p_interface,
                                                ULONG p_config_framework,
                                                ULONG *config_framework_size,
                                                UCHAR device_speed);
+#endif
 #endif /* USBD_AUDIO_CLASS_ACTIVATED */
 
 #if USBD_PRINTER_CLASS_ACTIVATED == 1U
@@ -510,8 +517,14 @@ static UINT usb_device_framework_builder(USB_DEVICE_HANDLE *p_device, UCHAR *fra
 #if USBD_AUDIO_CLASS_ACTIVATED == 1U
       case USBD_CLASS_TYPE_AUDIO_10:
       case USBD_CLASS_TYPE_AUDIO_20:
+#if defined(USBD_AUDIO_USE_UAC1_BUILDER)
+        status = usb_device_audio_uac1_framework_builder(p_interface,
+                    (ULONG) config_framework_pointer,
+                    &config_framework_size, device_speed);
+#else
         status = usb_device_audio_framework_builder(p_interface, (ULONG) config_framework_pointer,
                     &config_framework_size, device_speed);
+#endif
         break;
 #endif /* USBD_AUDIO_CLASS_ACTIVATED */
 
@@ -864,6 +877,7 @@ static UINT usb_device_dfu_framework_builder(USB_DEVICE_INTERFACE_HANDLE *p_inte
 #endif /* USBD_DFU_CLASS_ACTIVATED */
 
 #if USBD_AUDIO_CLASS_ACTIVATED == 1U
+#if !defined(USBD_AUDIO_USE_UAC1_BUILDER)
 /**
   * @brief  usb_device_audio_framework_builder
   *         Configure and Append the AUDIO Descriptor
@@ -1153,6 +1167,302 @@ static UINT usb_device_audio_framework_builder(USB_DEVICE_INTERFACE_HANDLE *p_in
 
   return USBD_DESCRIPTOR_SUCCESS;
 }
+#endif /* !USBD_AUDIO_USE_UAC1_BUILDER */
+
+#if defined(USBD_AUDIO_USE_UAC1_BUILDER)
+#if (USBD_AUDIO_CHANNEL_COUNT != 2U)
+#error "The UAC1 loopback descriptor currently supports stereo audio only"
+#endif
+
+/**
+  * @brief  Append a USB Audio Class 1.0 capture/playback function.
+  * @note   The function contains one control interface followed by one IN and
+  *         one OUT streaming interface, both using 48 kHz stereo PCM.
+  */
+static UINT usb_device_audio_uac1_framework_builder(USB_DEVICE_INTERFACE_HANDLE *p_interface,
+                                                    ULONG p_config_framework,
+                                                    ULONG *config_framework_size,
+                                                    UCHAR device_speed)
+{
+  UCHAR interface_count = 0U;
+  USB_DEVICE_INTERFACE_HANDLE *control_interface;
+  USB_DEVICE_INTERFACE_HANDLE *capture_interface;
+  USB_DEVICE_INTERFACE_HANDLE *playback_interface;
+  USB_DEVICE_INTERFACE_HANDLE *alternate_interface;
+  USB_DEVICE_ENDPOINT_HANDLE *endpoint;
+  UCHAR *descriptor;
+  ULONG audio_control_start;
+  ULONG audio_control_length;
+
+  control_interface = p_interface;
+  if (control_interface == UX_NULL)
+  {
+    return USBD_DESCRIPTOR_CLASS_BUILDER_ERROR;
+  }
+
+  capture_interface = control_interface->next_interface;
+  if (capture_interface == UX_NULL)
+  {
+    return USBD_DESCRIPTOR_CLASS_BUILDER_ERROR;
+  }
+
+  playback_interface = capture_interface->next_interface;
+  if (playback_interface == UX_NULL)
+  {
+    return USBD_DESCRIPTOR_CLASS_BUILDER_ERROR;
+  }
+
+  /* Interface Association Descriptor. */
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 8U;
+  descriptor[1] = USB_DESC_TYPE_IAD;
+  descriptor[2] = control_interface->interface_numbers;
+  descriptor[3] = 3U;
+  descriptor[4] = 0x01U;
+  descriptor[5] = 0x00U;
+  descriptor[6] = 0x00U;
+  descriptor[7] = 0U;
+  *config_framework_size += 8U;
+
+  /* AudioControl interface and class-specific header. */
+  usb_device_framework_set_interface(p_config_framework,
+                                     config_framework_size,
+                                     UX_NULL,
+                                     control_interface);
+  interface_count++;
+  audio_control_start = *config_framework_size;
+
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 10U;
+  descriptor[1] = 0x24U;
+  descriptor[2] = 0x01U;
+  descriptor[3] = 0x00U;
+  descriptor[4] = 0x01U;
+  descriptor[5] = 0U;
+  descriptor[6] = 0U;
+  descriptor[7] = 2U;
+  descriptor[8] = capture_interface->interface_numbers;
+  descriptor[9] = playback_interface->interface_numbers;
+  *config_framework_size += 10U;
+
+  /* Capture path: microphone input -> feature unit -> USB streaming output. */
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 12U;
+  descriptor[1] = 0x24U;
+  descriptor[2] = 0x02U;
+  descriptor[3] = USBD_AUDIO_CAPTURE_TERMINAL_INPUT_ID;
+  descriptor[4] = 0x01U;
+  descriptor[5] = 0x02U;
+  descriptor[6] = 0U;
+  descriptor[7] = USBD_AUDIO_CHANNEL_COUNT;
+  descriptor[8] = (UCHAR)(USBD_AUDIO_CHANNEL_MAP & 0xFFU);
+  descriptor[9] = (UCHAR)((USBD_AUDIO_CHANNEL_MAP >> 8) & 0xFFU);
+  descriptor[10] = 0U;
+  descriptor[11] = 0U;
+  *config_framework_size += 12U;
+
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 10U;
+  descriptor[1] = 0x24U;
+  descriptor[2] = 0x06U;
+  descriptor[3] = USBD_AUDIO_CAPTURE_FEATURE_UNIT_ID;
+  descriptor[4] = USBD_AUDIO_CAPTURE_TERMINAL_INPUT_ID;
+  descriptor[5] = 1U;
+  descriptor[6] = 0x01U;
+  descriptor[7] = 0x00U;
+  descriptor[8] = 0x00U;
+  descriptor[9] = 0U;
+  *config_framework_size += 10U;
+
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 9U;
+  descriptor[1] = 0x24U;
+  descriptor[2] = 0x03U;
+  descriptor[3] = USBD_AUDIO_CAPTURE_TERMINAL_OUTPUT_ID;
+  descriptor[4] = 0x01U;
+  descriptor[5] = 0x01U;
+  descriptor[6] = 0U;
+  descriptor[7] = USBD_AUDIO_CAPTURE_FEATURE_UNIT_ID;
+  descriptor[8] = 0U;
+  *config_framework_size += 9U;
+
+  /* Playback path: USB streaming input -> feature unit -> speaker output. */
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 12U;
+  descriptor[1] = 0x24U;
+  descriptor[2] = 0x02U;
+  descriptor[3] = USBD_AUDIO_PLAY_TERMINAL_INPUT_ID;
+  descriptor[4] = 0x01U;
+  descriptor[5] = 0x01U;
+  descriptor[6] = 0U;
+  descriptor[7] = USBD_AUDIO_CHANNEL_COUNT;
+  descriptor[8] = (UCHAR)(USBD_AUDIO_CHANNEL_MAP & 0xFFU);
+  descriptor[9] = (UCHAR)((USBD_AUDIO_CHANNEL_MAP >> 8) & 0xFFU);
+  descriptor[10] = 0U;
+  descriptor[11] = 0U;
+  *config_framework_size += 12U;
+
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 10U;
+  descriptor[1] = 0x24U;
+  descriptor[2] = 0x06U;
+  descriptor[3] = USBD_AUDIO_PLAY_FEATURE_UNIT_ID;
+  descriptor[4] = USBD_AUDIO_PLAY_TERMINAL_INPUT_ID;
+  descriptor[5] = 1U;
+  descriptor[6] = 0x01U;
+  descriptor[7] = 0x00U;
+  descriptor[8] = 0x00U;
+  descriptor[9] = 0U;
+  *config_framework_size += 10U;
+
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 9U;
+  descriptor[1] = 0x24U;
+  descriptor[2] = 0x03U;
+  descriptor[3] = USBD_AUDIO_PLAY_TERMINAL_OUTPUT_ID;
+  descriptor[4] = 0x01U;
+  descriptor[5] = 0x03U;
+  descriptor[6] = 0U;
+  descriptor[7] = USBD_AUDIO_PLAY_FEATURE_UNIT_ID;
+  descriptor[8] = 0U;
+  *config_framework_size += 9U;
+
+  /* Patch the class-specific AudioControl total length. */
+  audio_control_length = *config_framework_size - audio_control_start;
+  descriptor = (UCHAR *)(p_config_framework + audio_control_start);
+  descriptor[5] = (UCHAR)(audio_control_length & 0xFFU);
+  descriptor[6] = (UCHAR)((audio_control_length >> 8) & 0xFFU);
+
+  /* Capture AudioStreaming interface, alternate settings 0 and 1. */
+  usb_device_framework_set_interface(p_config_framework,
+                                     config_framework_size,
+                                     UX_NULL,
+                                     capture_interface);
+  alternate_interface = capture_interface->next_alt_setting;
+  if (alternate_interface == UX_NULL)
+  {
+    return USBD_DESCRIPTOR_CLASS_BUILDER_ERROR;
+  }
+  alternate_interface->interface_numbers = capture_interface->interface_numbers;
+  usb_device_framework_set_interface(p_config_framework,
+                                     config_framework_size,
+                                     UX_NULL,
+                                     alternate_interface);
+  interface_count++;
+
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 7U;
+  descriptor[1] = 0x24U;
+  descriptor[2] = 0x01U;
+  descriptor[3] = USBD_AUDIO_CAPTURE_TERMINAL_OUTPUT_ID;
+  descriptor[4] = 1U;
+  descriptor[5] = 0x01U;
+  descriptor[6] = 0x00U;
+  *config_framework_size += 7U;
+
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 11U;
+  descriptor[1] = 0x24U;
+  descriptor[2] = 0x02U;
+  descriptor[3] = 0x01U;
+  descriptor[4] = USBD_AUDIO_CHANNEL_COUNT;
+  descriptor[5] = USBD_AUDIO_RES_BYTE;
+  descriptor[6] = USBD_AUDIO_RES_BIT;
+  descriptor[7] = 1U;
+  descriptor[8] = (UCHAR)(USBD_AUDIO_SAMPLE_RATE & 0xFFU);
+  descriptor[9] = (UCHAR)((USBD_AUDIO_SAMPLE_RATE >> 8) & 0xFFU);
+  descriptor[10] = (UCHAR)((USBD_AUDIO_SAMPLE_RATE >> 16) & 0xFFU);
+  *config_framework_size += 11U;
+
+  endpoint = alternate_interface->device_endpoint;
+  if (endpoint == UX_NULL)
+  {
+    return USBD_DESCRIPTOR_CLASS_BUILDER_ERROR;
+  }
+  usb_device_framework_set_endpoint(p_config_framework,
+                                    config_framework_size,
+                                    UX_NULL,
+                                    endpoint,
+                                    device_speed);
+
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 7U;
+  descriptor[1] = 0x25U;
+  descriptor[2] = 0x01U;
+  descriptor[3] = 0x01U;
+  descriptor[4] = 0x00U;
+  descriptor[5] = 0x00U;
+  descriptor[6] = 0x00U;
+  *config_framework_size += 7U;
+
+  /* Playback AudioStreaming interface, alternate settings 0 and 1. */
+  usb_device_framework_set_interface(p_config_framework,
+                                     config_framework_size,
+                                     UX_NULL,
+                                     playback_interface);
+  alternate_interface = playback_interface->next_alt_setting;
+  if (alternate_interface == UX_NULL)
+  {
+    return USBD_DESCRIPTOR_CLASS_BUILDER_ERROR;
+  }
+  alternate_interface->interface_numbers = playback_interface->interface_numbers;
+  usb_device_framework_set_interface(p_config_framework,
+                                     config_framework_size,
+                                     UX_NULL,
+                                     alternate_interface);
+  interface_count++;
+
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 7U;
+  descriptor[1] = 0x24U;
+  descriptor[2] = 0x01U;
+  descriptor[3] = USBD_AUDIO_PLAY_TERMINAL_INPUT_ID;
+  descriptor[4] = 1U;
+  descriptor[5] = 0x01U;
+  descriptor[6] = 0x00U;
+  *config_framework_size += 7U;
+
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 11U;
+  descriptor[1] = 0x24U;
+  descriptor[2] = 0x02U;
+  descriptor[3] = 0x01U;
+  descriptor[4] = USBD_AUDIO_CHANNEL_COUNT;
+  descriptor[5] = USBD_AUDIO_RES_BYTE;
+  descriptor[6] = USBD_AUDIO_RES_BIT;
+  descriptor[7] = 1U;
+  descriptor[8] = (UCHAR)(USBD_AUDIO_SAMPLE_RATE & 0xFFU);
+  descriptor[9] = (UCHAR)((USBD_AUDIO_SAMPLE_RATE >> 8) & 0xFFU);
+  descriptor[10] = (UCHAR)((USBD_AUDIO_SAMPLE_RATE >> 16) & 0xFFU);
+  *config_framework_size += 11U;
+
+  endpoint = alternate_interface->device_endpoint;
+  if (endpoint == UX_NULL)
+  {
+    return USBD_DESCRIPTOR_CLASS_BUILDER_ERROR;
+  }
+  usb_device_framework_set_endpoint(p_config_framework,
+                                    config_framework_size,
+                                    UX_NULL,
+                                    endpoint,
+                                    device_speed);
+
+  descriptor = (UCHAR *)(p_config_framework + *config_framework_size);
+  descriptor[0] = 7U;
+  descriptor[1] = 0x25U;
+  descriptor[2] = 0x01U;
+  descriptor[3] = 0x01U;
+  descriptor[4] = 0x00U;
+  descriptor[5] = 0x00U;
+  descriptor[6] = 0x00U;
+  *config_framework_size += 7U;
+
+  ((USBD_CONFIGURATION_DESC *)p_config_framework)->wTotalLength = *config_framework_size;
+  ((USBD_CONFIGURATION_DESC *)p_config_framework)->bNumInterfaces += interface_count;
+
+  return USBD_DESCRIPTOR_SUCCESS;
+}
+#endif /* USBD_AUDIO_USE_UAC1_BUILDER */
 #endif /* USBD_AUDIO_CLASS_ACTIVATED */
 
 #if USBD_PRINTER_CLASS_ACTIVATED == 1U
@@ -2383,7 +2693,7 @@ USB_DEVICE_ENDPOINT_HANDLE audio_stream_out_endpoints[] =
 {
   {
     USBD_AUDIO_EPOUT_ADDR,
-    USBD_AUDIO_DATA_EP_TYPE,
+    USBD_AUDIO_EPOUT_DATA_TYPE,
     USBD_AUDIO_EPOUT_FS_MPS,
     USBD_AUDIO_EPOUT_FS_BINTERVAL,
 #if USBD_HIGH_SPEED_SUPPORTED == 1U

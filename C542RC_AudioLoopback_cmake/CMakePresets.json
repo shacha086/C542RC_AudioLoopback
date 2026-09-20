@@ -10,7 +10,7 @@
         {
             "name": "debug_GCC_NUCLEO-C542RC",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "${presetName}",
+                "CMAKE_BUILD_TYPE": "debug_GCC_NUCLEO-C542RC",
                 "TOOLCHAIN_FILE": "GCC.14.3.1.cmake"
             },
             "inherits": "default"
